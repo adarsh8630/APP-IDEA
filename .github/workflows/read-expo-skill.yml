@@ -1,0 +1,52 @@
+name: Read expo-app-design skill
+
+on:
+  push:
+    branches: [skill-expo-app-design]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-skill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run requested skill command and capture complete output
+        shell: bash
+        run: |
+          set -o pipefail
+          npx skills use "https://github.com/moizibnyousaf/ai-agent-skills" --skill "expo-app-design" > /tmp/expo-skill-output.txt 2>&1
+          cat /tmp/expo-skill-output.txt
+
+      - name: Locate and read installed skill and supporting files
+        shell: bash
+        run: |
+          mkdir -p /tmp/expo-skill-files
+          for candidate in             "$HOME/.agents/skills/expo-app-design"             "$HOME/.claude/skills/expo-app-design"             "$HOME/.codex/skills/expo-app-design"             "$GITHUB_WORKSPACE/.agents/skills/expo-app-design"             "$GITHUB_WORKSPACE/.claude/skills/expo-app-design"; do
+            if [ -d "$candidate" ]; then
+              cp -R "$candidate"/. /tmp/expo-skill-files/
+            fi
+          done
+          find /tmp/expo-skill-files -type f -print | sort
+          while IFS= read -r file; do
+            case "$file" in
+              *.md|*.txt|*.json|*.yaml|*.yml|*.js|*.ts|*.tsx)
+                echo "===== FILE: $file ====="
+                sed -n '1,$p' "$file"
+                ;;
+            esac
+          done < <(find /tmp/expo-skill-files -type f | sort)
+
+      - name: Preserve captured instructions
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-app-design-skill-output
+          path: |
+            /tmp/expo-skill-output.txt
+            /tmp/expo-skill-files
+          if-no-files-found: error
+          retention-days: 7
