@@ -1,119 +1,144 @@
 #!/usr/bin/env python3
 """Collect 365 existing, distinct, open-license 4K Christian images.
 
-Search metadata comes from Openverse. The image itself stays tied to its original
-internet host and source page. Nothing is AI-generated. Each item records creator,
-license, source, original dimensions, and the untouched 4K image URL.
+The files come from Wikimedia Commons source pages. Nothing is AI-generated.
+Every item records creator, license, source, original dimensions and original URL.
 """
 
 from __future__ import annotations
 
 import concurrent.futures
 import hashlib
+import html
 import io
 import json
 import pathlib
+import re
 import time
 from typing import Any
 
 import requests
 from PIL import Image, ImageOps
 
-SEARCH_API = "https://api.openverse.org/v1/images/"
+API = "https://commons.wikimedia.org/w/api.php"
 OUT = pathlib.Path(__file__).resolve().parents[1] / "assets" / "wallpapers"
 COUNT = 365
 PREVIEW_SIZE = (720, 1280)
-USER_AGENT = "Scripture365/1.2 (+https://github.com/adarsh8630/APP-IDEA)"
-OPEN_LICENSES = {"cc0", "pdm", "by", "by-sa"}
+USER_AGENT = "Scripture365/1.3 (+https://github.com/adarsh8630/APP-IDEA)"
 
 QUERIES = [
-    "Jesus Christ", "Jesus cross", "Jesus church", "Christ crucifix",
-    "Christ statue", "Christian cross", "cross sunrise", "cross sunset",
-    "cross mountain", "cross church", "wooden cross Christianity", "Holy Bible",
-    "open Bible", "Bible study Christian", "Bible prayer", "Christian prayer",
-    "Christian worship", "church worship", "church prayer", "church altar",
-    "church candles", "church stained glass", "Christian stained glass",
-    "cathedral cross", "cathedral altar", "chapel cross", "Christian baptism",
-    "Christian communion", "Christian rosary", "Christian faith", "Christian hope",
-    "Christian Easter", "Christian Christmas", "Christian pilgrimage",
-    "Christian monastery", "Christian Holy Land", "Jerusalem Christian",
-    "Bethlehem church", "Sea of Galilee Bible", "Christian scripture",
-    "Christian devotional", "Christian church interior", "Christian sacred art",
-    "Jesus painting", "Jesus icon", "Jesus mosaic", "Jesus stained glass",
-    "resurrection of Jesus art", "nativity of Jesus art", "Last Supper art",
+    "Jesus Christ painting", "Jesus Christ icon", "Jesus Christ mosaic",
+    "Jesus Christ stained glass", "Christ Pantocrator", "Sacred Heart Jesus",
+    "Jesus Good Shepherd art", "Jesus teaching painting", "Jesus praying art",
+    "Jesus disciples painting", "Jesus miracle painting", "Sermon Mount art",
+    "Nativity Jesus painting", "Adoration Magi art", "Baptism Jesus art",
+    "Transfiguration Jesus art", "Last Supper painting", "Crucifixion Jesus art",
+    "Resurrection Jesus painting", "Ascension Jesus art", "Jesus church fresco",
+    "Christian cross landscape", "Christian cross church", "Bible still life",
+    "open Bible church", "Christian prayer art", "Christian worship church",
+    "Christian stained glass", "Christian sacred art", "Christian church interior",
+    "Christian cathedral interior", "Christian chapel altar", "Christian monastery",
+    "Christian pilgrimage", "Christian baptism art", "Christian communion art",
+    "Virgin Mary Jesus art", "Madonna Child painting", "Holy Family painting",
+    "Christian angels painting", "Christian saints painting", "Christian icon art",
+    "Christian faith painting", "Christian hope art", "Christian charity art",
+    "Orthodox Christian icon", "Catholic sacred art", "Protestant church cross",
+    "Biblical landscape", "Holy Land Christian", "Jerusalem church",
 ]
 
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
 
 
-def is_usable(item: dict[str, Any]) -> bool:
-    width = int(item.get("width") or 0)
-    height = int(item.get("height") or 0)
-    license_name = str(item.get("license") or "").lower()
-    url = str(item.get("url") or "")
-    landing = str(item.get("foreign_landing_url") or "")
-    if max(width, height) < 3840 or min(width, height) < 2160:
-        return False
-    if license_name not in OPEN_LICENSES or not url.startswith("https://"):
-        return False
-    if not landing.startswith("http"):
-        return False
-    lowered = " ".join([
-        str(item.get("title") or ""), str(item.get("tags") or ""),
-        str(item.get("attribution") or ""),
-    ]).lower()
-    blocked = (" ai generated", "ai-generated", "midjourney", "stable diffusion")
-    return not any(word in lowered for word in blocked)
+def plain(value: str | None) -> str:
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def meta_value(meta: dict[str, Any], key: str) -> str:
+    value = meta.get(key, {})
+    return plain(value.get("value") if isinstance(value, dict) else str(value))
+
+
+def acceptable(meta: dict[str, Any], title: str) -> bool:
+    license_text = (
+        meta_value(meta, "LicenseShortName") + " " + meta_value(meta, "UsageTerms")
+    ).lower()
+    permitted = ("public domain", "cc0", "cc by", "creative commons attribution")
+    blocked_license = ("noncommercial", "no derivatives", "fair use", "copyrighted")
+    description = (title + " " + meta_value(meta, "ImageDescription")).lower()
+    blocked_art = ("ai-generated", "ai generated", "midjourney", "stable diffusion")
+    return (
+        any(term in license_text for term in permitted)
+        and not any(term in license_text for term in blocked_license)
+        and not any(term in description for term in blocked_art)
+    )
 
 
 def search_candidates() -> list[dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
+    original_hashes: set[str] = set()
     for query in QUERIES:
-        for page in range(1, 4):
-            response = session.get(
-                SEARCH_API,
-                params={
-                    "q": query,
-                    "page": page,
-                    "page_size": 80,
-                    "license": ",".join(sorted(OPEN_LICENSES)),
-                    "mature": "false",
-                },
-                timeout=60,
-            )
+        offset = 0
+        for _ in range(4):
+            params = {
+                "action": "query",
+                "format": "json",
+                "formatversion": "2",
+                "generator": "search",
+                "gsrsearch": f"{query} filetype:bitmap",
+                "gsrnamespace": "6",
+                "gsrlimit": "50",
+                "gsroffset": str(offset),
+                "prop": "imageinfo",
+                "iiprop": "url|mime|size|sha1|extmetadata",
+                "iiurlwidth": "1280",
+            }
+            response = session.get(API, params=params, timeout=60)
             response.raise_for_status()
             payload = response.json()
-            results = payload.get("results", [])
-            if not results:
+            pages = payload.get("query", {}).get("pages", [])
+            if not pages:
                 break
-            for item in results:
-                if not is_usable(item):
+            for page in pages:
+                info_list = page.get("imageinfo") or []
+                if not info_list:
                     continue
-                source_id = f"{item.get('source', 'internet')}:{item.get('id', '')}"
-                if source_id.endswith(":"):
+                info = info_list[0]
+                width = int(info.get("width") or 0)
+                height = int(info.get("height") or 0)
+                source_hash = str(info.get("sha1") or "")
+                meta = info.get("extmetadata") or {}
+                title = str(page.get("title") or "")
+                if info.get("mime") not in {"image/jpeg", "image/png", "image/webp"}:
                     continue
-                selected.setdefault(source_id, {
-                    "sourceId": source_id,
-                    "source": item.get("source") or item.get("provider") or "Openverse",
-                    "title": item.get("title") or query,
-                    "creator": item.get("creator") or "Unknown creator",
-                    "creatorUrl": item.get("creator_url") or "",
-                    "license": str(item.get("license") or "").upper(),
-                    "licenseUrl": item.get("license_url") or "",
-                    "sourceUrl": item.get("foreign_landing_url") or "",
-                    "originalUrl": item.get("url") or "",
-                    "download4kUrl": item.get("url") or "",
-                    "previewUrl": item.get("thumbnail") or item.get("url") or "",
-                    "originalWidth": int(item.get("width") or 0),
-                    "originalHeight": int(item.get("height") or 0),
+                if max(width, height) < 3840 or min(width, height) < 2160:
+                    continue
+                if not source_hash or source_hash in original_hashes or not acceptable(meta, title):
+                    continue
+                page_id = int(page["pageid"])
+                original_hashes.add(source_hash)
+                selected[str(page_id)] = {
+                    "sourceId": f"commons:{page_id}",
+                    "source": "Wikimedia Commons",
+                    "title": title.removeprefix("File:"),
+                    "creator": meta_value(meta, "Artist") or meta_value(meta, "Credit") or "Wikimedia Commons contributor",
+                    "creatorUrl": "",
+                    "license": meta_value(meta, "LicenseShortName") or meta_value(meta, "UsageTerms"),
+                    "licenseUrl": meta_value(meta, "LicenseUrl"),
+                    "sourceUrl": info.get("descriptionurl") or f"https://commons.wikimedia.org/?curid={page_id}",
+                    "originalUrl": info.get("url") or "",
+                    "download4kUrl": info.get("url") or "",
+                    "previewUrl": info.get("thumburl") or info.get("url") or "",
+                    "originalWidth": width,
+                    "originalHeight": height,
                     "searchTheme": query,
-                })
+                    "sourceSha1": source_hash,
+                }
             if len(selected) >= COUNT + 180:
                 return list(selected.values())
-            if page >= int(payload.get("page_count") or page):
-                break
-            time.sleep(0.35)
+            offset += 50
+            time.sleep(0.12)
     if len(selected) < COUNT:
         raise RuntimeError(f"Only {len(selected)} distinct qualifying 4K images found; need {COUNT}")
     return list(selected.values())
@@ -121,7 +146,7 @@ def search_candidates() -> list[dict[str, Any]]:
 
 def fetch_preview(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str] | None:
     try:
-        response = session.get(candidate["previewUrl"], timeout=60)
+        response = session.get(candidate["previewUrl"], timeout=90)
         response.raise_for_status()
         payload = response.content
         if len(payload) < 5000:
@@ -147,10 +172,8 @@ def main() -> None:
     records: list[dict[str, Any]] = []
     seen_previews: set[str] = set()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-        fetched = pool.map(fetch_preview, candidates)
-
-        for result in fetched:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for result in pool.map(fetch_preview, candidates):
             if result is None:
                 continue
             candidate, preview, digest = result
@@ -160,13 +183,8 @@ def main() -> None:
             day = len(records) + 1
             filename = f"day_{day:03d}.webp"
             (OUT / filename).write_bytes(preview)
-            records.append({
-                "day": day,
-                "file": filename,
-                **candidate,
-                "previewSha256": digest,
-            })
-            print(f"{day:03d}/{COUNT}: {candidate['source']} — {candidate['title']}")
+            records.append({"day": day, "file": filename, **candidate, "previewSha256": digest})
+            print(f"{day:03d}/{COUNT}: {candidate['title']}")
             if day == COUNT:
                 break
 
@@ -174,23 +192,17 @@ def main() -> None:
         raise RuntimeError(f"Collected {len(records)} unique reachable wallpapers; expected {COUNT}")
 
     manifest = {
-        "catalog": "Openverse",
-        "policy": "365 existing internet images. Every source ID and preview is distinct, every original is 4K-qualified, licenses are CC0/PDM/CC BY/CC BY-SA, and no artwork is AI-generated.",
+        "catalog": "Wikimedia Commons",
+        "policy": "365 existing internet images. Every source file and preview is distinct, every original is 4K-qualified, licenses are public domain/CC0/CC BY/CC BY-SA, and no artwork is AI-generated.",
         "previewWidth": PREVIEW_SIZE[0],
         "previewHeight": PREVIEW_SIZE[1],
         "count": COUNT,
         "wallpapers": records,
     }
-    (OUT / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
-    )
+    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     assert len({item["sourceId"] for item in records}) == COUNT
+    assert len({item["sourceSha1"] for item in records}) == COUNT
     assert len({item["previewSha256"] for item in records}) == COUNT
-    assert all(
-        max(item["originalWidth"], item["originalHeight"]) >= 3840
-        and min(item["originalWidth"], item["originalHeight"]) >= 2160
-        for item in records
-    )
     print(f"Collected {COUNT} distinct licensed 4K sources; no synthetic images.")
 
 
