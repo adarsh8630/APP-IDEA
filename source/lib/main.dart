@@ -465,7 +465,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
               sliver: SliverList.separated(
                 itemCount: entries.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) => EntryTile(entry: entries[index], saved: widget.state.saved.contains(entries[index].dayOfYear), onSaved: () => widget.state.toggleSaved(entries[index])),
               ),
             ),
@@ -539,7 +539,7 @@ class SavedScreen extends StatelessWidget {
       child: DefaultTabController(
         length: 2,
         child: Scaffold(
-          appBar: const AppBar(title: Text('Saved'), bottom: TabBar(tabs: [Tab(text: 'Favorites'), Tab(text: 'History')])),
+          appBar: AppBar(title: const Text('Saved'), bottom: TabBar(tabs: [Tab(text: 'Favorites'), Tab(text: 'History')])),
           body: TabBarView(children: [
             EntryList(entries: favorites, state: state, empty: 'Tap Save on Today to keep a verse here.'),
             EntryList(entries: viewed, state: state, empty: 'Verses you view will appear here.'),
@@ -562,7 +562,7 @@ class EntryList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(18),
       itemCount: entries.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) => EntryTile(entry: entries[index], saved: state.saved.contains(entries[index].dayOfYear), onSaved: () => state.toggleSaved(entries[index])),
     );
   }
