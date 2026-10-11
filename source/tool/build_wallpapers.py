@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build 365 distinct, licensed Christian wallpapers from Wikimedia Commons."""
+"""Collect 365 existing, distinct, licensed 4K Christian images from Wikimedia Commons."""
 
 from __future__ import annotations
 
@@ -78,8 +78,8 @@ def search_candidates() -> list[dict[str, Any]]:
             "gsrnamespace": "6",
             "gsrlimit": "50",
             "prop": "imageinfo",
-            "iiprop": "url|mime|extmetadata",
-            "iiurlwidth": str(SIZE[0]),
+            "iiprop": "url|mime|size|sha1|extmetadata",
+            "iiurlwidth": "1280",
         }
         response = session.get(API, params=params, timeout=45)
         response.raise_for_status()
@@ -89,6 +89,12 @@ def search_candidates() -> list[dict[str, Any]]:
                 continue
             info = info_items[0]
             if info.get("mime") not in {"image/jpeg", "image/png", "image/webp"}:
+                continue
+            width = int(info.get("width") or 0)
+            height = int(info.get("height") or 0)
+            # A source is 4K-qualified only when its long side is at least 3840
+            # pixels and its short side is at least 2160 pixels.
+            if max(width, height) < 3840 or min(width, height) < 2160:
                 continue
             meta = info.get("extmetadata") or {}
             if not acceptable_license(meta):
@@ -105,6 +111,9 @@ def search_candidates() -> list[dict[str, Any]]:
                 "licenseUrl": metadata_value(meta, "LicenseUrl"),
                 "description": metadata_value(meta, "ImageDescription"),
                 "query": query,
+                "originalWidth": width,
+                "originalHeight": height,
+                "sourceSha1": info.get("sha1") or "",
             })
         if len(chosen) >= COUNT * 2:
             break
@@ -115,6 +124,8 @@ def search_candidates() -> list[dict[str, Any]]:
 
 
 def render(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str]:
+    # The app preview is a performance-sized derivative supplied by Commons.
+    # The untouched 4K original remains linked for the wallpaper action.
     response = session.get(candidate["imageUrl"], timeout=90)
     response.raise_for_status()
     raw = response.content
@@ -141,6 +152,7 @@ def main() -> None:
     candidates = search_candidates()
     records: list[dict[str, Any]] = []
     seen_downloads: set[str] = set()
+    seen_originals: set[str] = set()
     next_day = 1
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -153,9 +165,11 @@ def main() -> None:
             except Exception as exc:
                 print(f"Skipping failed image: {exc}")
                 continue
-            if digest in seen_downloads:
+            source_sha1 = candidate["sourceSha1"]
+            if digest in seen_downloads or not source_sha1 or source_sha1 in seen_originals:
                 continue
             seen_downloads.add(digest)
+            seen_originals.add(source_sha1)
             filename = f"day_{next_day:03d}.webp"
             (OUT / filename).write_bytes(payload)
             record = {
@@ -168,7 +182,10 @@ def main() -> None:
                 "sourceUrl": candidate["sourceUrl"],
                 "originalUrl": candidate["originalUrl"],
                 "searchTheme": candidate["query"],
-                "sourceSha256": digest,
+                "previewSha256": digest,
+                "sourceSha1": source_sha1,
+                "originalWidth": candidate["originalWidth"],
+                "originalHeight": candidate["originalHeight"],
             }
             records.append(record)
             print(f"{next_day:03d}/{COUNT}: {candidate['title']}")
@@ -179,7 +196,7 @@ def main() -> None:
 
     manifest = {
         "generatedFrom": "Wikimedia Commons",
-        "policy": "One different source page and source binary per day; public domain or Creative Commons only.",
+        "policy": "365 existing internet images; every original is distinct, 4K-qualified, and public domain or Creative Commons. No artwork is AI-generated.",
         "width": SIZE[0],
         "height": SIZE[1],
         "count": len(records),
@@ -187,7 +204,8 @@ def main() -> None:
     }
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     assert len({item["sourceUrl"] for item in records}) == COUNT
-    assert len({item["sourceSha256"] for item in records}) == COUNT
+    assert len({item["sourceSha1"] for item in records}) == COUNT
+    assert all(max(item["originalWidth"], item["originalHeight"]) >= 3840 and min(item["originalWidth"], item["originalHeight"]) >= 2160 for item in records)
     print(f"Built and attributed {COUNT} distinct wallpapers in {OUT}")
 
 
