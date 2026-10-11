@@ -80,6 +80,7 @@ def search_candidates() -> list[dict[str, Any]]:
     original_hashes: set[str] = set()
     for query in QUERIES:
         offset = 0
+        added_for_query = 0
         for _ in range(4):
             params = {
                 "action": "query",
@@ -135,8 +136,13 @@ def search_candidates() -> list[dict[str, Any]]:
                     "searchTheme": query,
                     "sourceSha1": source_hash,
                 }
+                added_for_query += 1
+                if added_for_query >= 10:
+                    break
             if len(selected) >= COUNT + 180:
                 return list(selected.values())
+            if added_for_query >= 10:
+                break
             offset += 50
             time.sleep(0.12)
     if len(selected) < COUNT:
