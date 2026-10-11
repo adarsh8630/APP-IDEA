@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "principle": "Verse first, then meaning, then visual direction, then artwork.",
+  "months": [
+    {"month":1,"name":"January","arc":"Renewal • Purpose • New beginnings","weeks":["New beginnings","Trusting the unknown","Purpose","Perseverance","Carry faith forward"]},
+    {"month":2,"name":"February","arc":"Love • Compassion • Relationships","weeks":["God's love","Patient love","Compassion","Forgiveness"]},
+    {"month":3,"name":"March","arc":"Faith • Trust • Discipline","weeks":["Trust","Prayer","Spiritual discipline","Faith under pressure","Surrender"]},
+    {"month":4,"name":"April","arc":"Sacrifice • Resurrection • Hope","weeks":["Grace","The Cross","Resurrection","New life","Hope"]},
+    {"month":5,"name":"May","arc":"Wisdom • Family • Guidance","weeks":["Wisdom","Family","Guidance","Listening","Faithful choices"]},
+    {"month":6,"name":"June","arc":"Courage • Strength","weeks":["Courage","Strength","Bold faith","Endurance","Confidence in God"]},
+    {"month":7,"name":"July","arc":"Freedom • Grace • Identity","weeks":["Freedom","Grace","Identity in Christ","Belonging","Living free"]},
+    {"month":8,"name":"August","arc":"Patience • Endurance • Waiting","weeks":["Waiting","Patience","Endurance","Faithfulness","Hope in delay"]},
+    {"month":9,"name":"September","arc":"Calling • Work • Wisdom","weeks":["Calling","Diligence","Stewardship","Wisdom at work","Purpose"]},
+    {"month":10,"name":"October","arc":"Peace • Fear • Rest","weeks":["Peace","Fear","Refuge","Rest","Trust"]},
+    {"month":11,"name":"November","arc":"Gratitude • Provision • Generosity","weeks":["Gratitude","Provision","Contentment","Generosity","Thanksgiving"]},
+    {"month":12,"name":"December","arc":"Advent • Joy • Christ • Peace","weeks":["Waiting","Promise","Joy","Nativity","Christ with us"]}
+  ],
+  "movable_overrides": ["Palm Sunday","Good Friday","Easter Sunday","Pentecost","Advent Sundays"],
+  "fixed_overrides": ["January 1","December 24","December 25","December 31"]
+}

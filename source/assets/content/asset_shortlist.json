@@ -1,0 +1,38 @@
+[
+  {
+    "id": "unsplash-church-interior-kfred",
+    "type": "photo",
+    "source": "Unsplash",
+    "sourceUrl": "https://unsplash.com/photos/church-interior-JRsZWmRd_Ws",
+    "license": "Unsplash License",
+    "status": "shortlisted",
+    "use": "Sacred/church interior days"
+  },
+  {
+    "id": "unsplash-stained-glass-holy-island",
+    "type": "photo",
+    "source": "Unsplash",
+    "sourceUrl": "https://unsplash.com/photos/a-group-of-stained-glass-windows-j_ElfUhCySY",
+    "license": "Unsplash License",
+    "status": "shortlisted",
+    "use": "Worship / guidance / sacred variants"
+  },
+  {
+    "id": "pixabay-easter-sunrise-cross",
+    "type": "photo",
+    "source": "Pixabay",
+    "sourceUrl": "https://pixabay.com/photos/easter-easter-sunrise-cross-1443348/",
+    "license": "Pixabay Content License",
+    "status": "shortlisted",
+    "use": "Easter / resurrection / hope"
+  },
+  {
+    "id": "pexels-summit-cross-foggy-sunrise",
+    "type": "photo",
+    "source": "Pexels",
+    "sourceUrl": "https://www.pexels.com/photo/summit-cross-at-a-foggy-sunrise-20889043/",
+    "license": "Pexels License",
+    "status": "shortlisted",
+    "use": "Courage / hope / strength"
+  }
+]
