@@ -32,6 +32,19 @@ jobs:
         working-directory: source
         run: flutter pub get
 
+      - name: Validate 365-day content
+        working-directory: source
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          data = json.loads(pathlib.Path('assets/content/year_365.json').read_text())
+          entries = data['entries']
+          assert len(entries) == 365, f'expected 365 entries, got {len(entries)}'
+          assert [entry['doy'] for entry in entries] == list(range(1, 366))
+          for name in ['forest','harvest','meadow','mist','mountain','night','path','still','sunrise','sunset','trail','valley']:
+              assert pathlib.Path(f'assets/wallpapers/{name}.webp').is_file()
+          PY
+
       - name: Analyze
         working-directory: source
         run: flutter analyze
@@ -43,6 +56,20 @@ jobs:
       - name: Build production web app
         working-directory: source
         run: flutter build web --release --base-href /APP-IDEA/
+
+      - name: Build Android release
+        working-directory: source
+        run: flutter build apk --release
+
+      - name: Preserve release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: scripture365-${{ github.sha }}
+          path: |
+            source/build/web
+            source/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Publish verified build
         uses: peaceiris/actions-gh-pages@v4
