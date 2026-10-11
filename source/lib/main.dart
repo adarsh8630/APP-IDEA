@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,6 +83,7 @@ class WallpaperCredit {
     required this.license,
     required this.licenseUrl,
     required this.sourceUrl,
+    required this.download4kUrl,
   });
 
   factory WallpaperCredit.fromJson(Map<String, dynamic> json) => WallpaperCredit(
@@ -91,6 +93,7 @@ class WallpaperCredit {
         license: json['license'] as String? ?? '',
         licenseUrl: json['licenseUrl'] as String? ?? '',
         sourceUrl: json['sourceUrl'] as String? ?? '',
+        download4kUrl: json['download4kUrl'] as String? ?? '',
       );
 
   final int day;
@@ -99,6 +102,7 @@ class WallpaperCredit {
   final String license;
   final String licenseUrl;
   final String sourceUrl;
+  final String download4kUrl;
 }
 
 class ScriptureRepository {
@@ -744,6 +748,18 @@ Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry, Wall
         const SizedBox(height: 14),
         FilledButton.icon(onPressed: () => Share.share(entry.shareText), icon: const Icon(Icons.ios_share), label: const Text('Share Scripture')),
         if (credit != null) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                final uri = Uri.tryParse(credit.download4kUrl);
+                if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.download_rounded),
+              label: const Text('Open 4K Wallpaper'),
+            ),
+          ),
           const SizedBox(height: 12),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
