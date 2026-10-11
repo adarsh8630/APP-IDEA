@@ -18,9 +18,12 @@ jobs:
       - name: Run requested skill command and capture complete output
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           npx skills use "https://github.com/moizibnyousaf/ai-agent-skills" --skill "expo-app-design" > /tmp/expo-skill-output.txt 2>&1
+          command_status=$?
+          set -e
           cat /tmp/expo-skill-output.txt
+          echo "COMMAND_EXIT_STATUS=$command_status"
 
       - name: Locate and read installed skill and supporting files
         shell: bash
