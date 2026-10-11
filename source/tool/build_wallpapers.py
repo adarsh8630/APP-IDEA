@@ -1,212 +1,200 @@
 #!/usr/bin/env python3
-"""Collect 365 existing, distinct, licensed 4K Christian images from Wikimedia Commons."""
+"""Collect 365 existing, distinct, licensed 4K Christian photographs from Unsplash.
+
+No image is synthesized. Each record points to a real photographer, source page,
+license, original dimensions, and a 4K download URL. A smaller derivative is
+bundled only so the mobile UI loads quickly.
+"""
 
 from __future__ import annotations
 
 import concurrent.futures
 import hashlib
-import html
 import io
 import json
-import os
 import pathlib
-import re
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 
-API = "https://commons.wikimedia.org/w/api.php"
+SEARCH_API = "https://unsplash.com/napi/search/photos"
 OUT = pathlib.Path(__file__).resolve().parents[1] / "assets" / "wallpapers"
 COUNT = 365
-SIZE = (720, 1280)
-USER_AGENT = "Scripture365WallpaperBuilder/1.0 (https://github.com/adarsh8630/APP-IDEA)"
+PREVIEW_SIZE = (720, 1280)
+USER_AGENT = "Scripture365/1.1 (+https://github.com/adarsh8630/APP-IDEA)"
+LICENSE_URL = "https://unsplash.com/license"
 
-# The mix is intentionally broader than paintings of Jesus alone: the brief calls
-# for Christ-centred imagery plus wider Christian faith, worship and sacred art.
+# Focused searches keep every result connected to Christ, Scripture, Christian
+# worship or recognisably Christian sacred spaces and symbols.
 QUERIES = [
-    "Jesus Christ painting", "Jesus Christ icon", "Jesus Christ mosaic",
-    "Jesus Christ stained glass", "Christ Pantocrator", "Sacred Heart Jesus",
-    "Jesus Good Shepherd art", "Jesus teaching painting", "Jesus praying art",
-    "Jesus and disciples painting", "Jesus miracle painting", "Sermon on the Mount art",
-    "Nativity of Jesus painting", "Adoration of the Magi art", "Baptism of Jesus art",
-    "Transfiguration of Jesus art", "Last Supper painting", "Crucifixion of Jesus art",
-    "Resurrection of Jesus painting", "Ascension of Jesus art", "Jesus church fresco",
-    "Christian cross landscape", "Christian cross church", "Bible still life",
-    "open Bible church", "Christian prayer art", "Christian worship church",
-    "Christian stained glass", "Christian sacred art", "Christian church interior",
-    "Christian cathedral interior", "Christian chapel altar", "Christian monastery",
-    "Christian pilgrimage", "Christian baptism art", "Christian communion art",
-    "Virgin Mary and Jesus art", "Madonna and Child painting", "Holy Family painting",
-    "Christian angels painting", "Christian saints painting", "Christian icon art",
-    "Christian faith painting", "Christian hope art", "Christian charity art",
+    "Jesus Christ", "Jesus cross", "Jesus statue", "Jesus church",
+    "Christ crucifix", "Christ statue", "Christian cross", "cross sunrise",
+    "cross sunset", "cross mountain", "cross church", "wooden cross",
+    "Bible", "open Bible", "Bible study", "Bible prayer", "Bible church",
+    "Christian prayer", "praying Christian", "Christian worship",
+    "church worship", "church prayer", "church altar", "church candles",
+    "church stained glass", "Christian stained glass", "cathedral cross",
+    "cathedral altar", "chapel cross", "chapel prayer", "Christian baptism",
+    "Christian communion", "Christian rosary", "Christian faith",
+    "Christian hope", "Christian Easter", "Christian Christmas",
+    "Christian pilgrimage", "Christian monastery", "Christian holy land",
+    "Jerusalem Christian", "Bethlehem church", "Sea of Galilee Bible",
+    "Christian scripture", "Christian devotional", "Christian ministry",
+    "Christian church interior", "Christian church exterior",
 ]
 
 session = requests.Session()
-session.headers["User-Agent"] = USER_AGENT
+session.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
 
 
-def plain(value: str | None) -> str:
-    text = re.sub(r"<[^>]+>", " ", value or "")
-    return re.sub(r"\s+", " ", html.unescape(text)).strip()
-
-
-def metadata_value(meta: dict[str, Any], key: str) -> str:
-    value = meta.get(key, {})
-    return plain(value.get("value") if isinstance(value, dict) else str(value))
-
-
-def acceptable_license(meta: dict[str, Any]) -> bool:
-    license_name = metadata_value(meta, "LicenseShortName").lower()
-    usage = metadata_value(meta, "UsageTerms").lower()
-    combined = f"{license_name} {usage}"
-    permitted = ("public domain", "cc0", "cc by", "creative commons attribution")
-    blocked = ("noncommercial", "no derivatives", "fair use", "copyrighted")
-    return any(item in combined for item in permitted) and not any(item in combined for item in blocked)
+def with_params(base: str, **params: Any) -> str:
+    joiner = "&" if "?" in base else "?"
+    return base + joiner + urlencode(params)
 
 
 def search_candidates() -> list[dict[str, Any]]:
-    chosen: dict[int, dict[str, Any]] = {}
+    selected: dict[str, dict[str, Any]] = {}
     for query in QUERIES:
-        params = {
-            "action": "query",
-            "format": "json",
-            "formatversion": "2",
-            "generator": "search",
-            "gsrsearch": f"{query} filetype:bitmap",
-            "gsrnamespace": "6",
-            "gsrlimit": "50",
-            "prop": "imageinfo",
-            "iiprop": "url|mime|size|sha1|extmetadata",
-            "iiurlwidth": "1280",
-        }
-        response = session.get(API, params=params, timeout=45)
-        response.raise_for_status()
-        for page in response.json().get("query", {}).get("pages", []):
-            info_items = page.get("imageinfo") or []
-            if not info_items:
-                continue
-            info = info_items[0]
-            if info.get("mime") not in {"image/jpeg", "image/png", "image/webp"}:
-                continue
-            width = int(info.get("width") or 0)
-            height = int(info.get("height") or 0)
-            # A source is 4K-qualified only when its long side is at least 3840
-            # pixels and its short side is at least 2160 pixels.
-            if max(width, height) < 3840 or min(width, height) < 2160:
-                continue
-            meta = info.get("extmetadata") or {}
-            if not acceptable_license(meta):
-                continue
-            page_id = int(page["pageid"])
-            chosen.setdefault(page_id, {
-                "pageId": page_id,
-                "title": page.get("title", ""),
-                "imageUrl": info.get("thumburl") or info.get("url"),
-                "originalUrl": info.get("url"),
-                "sourceUrl": info.get("descriptionurl") or f"https://commons.wikimedia.org/?curid={page_id}",
-                "creator": metadata_value(meta, "Artist") or metadata_value(meta, "Credit") or "Wikimedia Commons contributor",
-                "license": metadata_value(meta, "LicenseShortName") or metadata_value(meta, "UsageTerms"),
-                "licenseUrl": metadata_value(meta, "LicenseUrl"),
-                "description": metadata_value(meta, "ImageDescription"),
-                "query": query,
-                "originalWidth": width,
-                "originalHeight": height,
-                "sourceSha1": info.get("sha1") or "",
-            })
-        if len(chosen) >= COUNT * 2:
-            break
-        time.sleep(0.08)
-    if len(chosen) < COUNT:
-        raise RuntimeError(f"Only {len(chosen)} licensed distinct source pages found; need {COUNT}")
-    return list(chosen.values())
+        for page in range(1, 6):
+            response = session.get(
+                SEARCH_API,
+                params={"query": query, "page": page, "per_page": 30},
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload.get("results", [])
+            if not results:
+                break
+            for photo in results:
+                width = int(photo.get("width") or 0)
+                height = int(photo.get("height") or 0)
+                if max(width, height) < 3840 or min(width, height) < 2160:
+                    continue
+                photo_id = str(photo.get("id") or "")
+                raw_url = (photo.get("urls") or {}).get("raw")
+                page_url = (photo.get("links") or {}).get("html")
+                user = photo.get("user") or {}
+                if not photo_id or not raw_url or not page_url:
+                    continue
+                selected.setdefault(photo_id, {
+                    "sourceId": photo_id,
+                    "title": photo.get("description") or photo.get("alt_description") or query,
+                    "creator": user.get("name") or "Unsplash photographer",
+                    "creatorUrl": (user.get("links") or {}).get("html") or "",
+                    "license": "Unsplash License",
+                    "licenseUrl": LICENSE_URL,
+                    "sourceUrl": page_url,
+                    "originalUrl": raw_url,
+                    "originalWidth": width,
+                    "originalHeight": height,
+                    "searchTheme": query,
+                    # Exact portrait 4K derivative of the existing photograph.
+                    "download4kUrl": with_params(
+                        raw_url, w=2160, h=3840, fit="crop", crop="faces,entropy",
+                        fm="jpg", q=92,
+                    ),
+                    "previewUrl": with_params(
+                        raw_url, w=PREVIEW_SIZE[0], h=PREVIEW_SIZE[1],
+                        fit="crop", crop="faces,entropy", fm="webp", q=76,
+                    ),
+                })
+            if len(selected) >= COUNT * 2:
+                return list(selected.values())
+            if page >= int(payload.get("total_pages") or page):
+                break
+            time.sleep(0.12)
+    if len(selected) < COUNT:
+        raise RuntimeError(f"Only {len(selected)} distinct qualifying 4K photographs found; need {COUNT}")
+    return list(selected.values())
 
 
-def render(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str]:
-    # The app preview is a performance-sized derivative supplied by Commons.
-    # The untouched 4K original remains linked for the wallpaper action.
-    response = session.get(candidate["imageUrl"], timeout=90)
+def fetch_preview(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str]:
+    response = session.get(candidate["previewUrl"], timeout=90)
     response.raise_for_status()
-    raw = response.content
-    digest = hashlib.sha256(raw).hexdigest()
-    with Image.open(io.BytesIO(raw)) as source:
-        image = ImageOps.exif_transpose(source).convert("RGB")
-        image = ImageOps.fit(image, SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.45))
-        # Gentle treatment keeps overlaid Scripture readable without hiding the art.
-        image = ImageEnhance.Color(image).enhance(0.9)
-        image = ImageEnhance.Contrast(image).enhance(1.02)
-        image = image.filter(ImageFilter.GaussianBlur(radius=0.15))
-        buffer = io.BytesIO()
-        image.save(buffer, "WEBP", quality=74, method=6)
-    return candidate, buffer.getvalue(), digest
+    payload = response.content
+    digest = hashlib.sha256(payload).hexdigest()
+    # Verify the response is truly an image and normalize metadata without
+    # changing the artwork.
+    with Image.open(io.BytesIO(payload)) as image:
+        normalized = ImageOps.exif_transpose(image).convert("RGB")
+        if normalized.size != PREVIEW_SIZE:
+            normalized = ImageOps.fit(normalized, PREVIEW_SIZE, Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        normalized.save(output, "WEBP", quality=76, method=6)
+    return candidate, output.getvalue(), digest
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    # Remove only previously generated daily files; preserve the legacy set for
-    # repository history and as a development fallback.
     for path in OUT.glob("day_*.webp"):
         path.unlink()
 
     candidates = search_candidates()
     records: list[dict[str, Any]] = []
-    seen_downloads: set[str] = set()
-    seen_originals: set[str] = set()
-    next_day = 1
+    seen_previews: set[str] = set()
 
+    # Keep deterministic day assignment even though downloads happen in parallel.
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(render, item) for item in candidates]
-        for future in concurrent.futures.as_completed(futures):
-            if next_day > COUNT:
-                break
-            try:
-                candidate, payload, digest = future.result()
-            except Exception as exc:
-                print(f"Skipping failed image: {exc}")
-                continue
-            source_sha1 = candidate["sourceSha1"]
-            if digest in seen_downloads or not source_sha1 or source_sha1 in seen_originals:
-                continue
-            seen_downloads.add(digest)
-            seen_originals.add(source_sha1)
-            filename = f"day_{next_day:03d}.webp"
-            (OUT / filename).write_bytes(payload)
-            record = {
-                "day": next_day,
-                "file": filename,
-                "title": candidate["title"],
-                "creator": candidate["creator"],
-                "license": candidate["license"],
-                "licenseUrl": candidate["licenseUrl"],
-                "sourceUrl": candidate["sourceUrl"],
-                "originalUrl": candidate["originalUrl"],
-                "searchTheme": candidate["query"],
-                "previewSha256": digest,
-                "sourceSha1": source_sha1,
-                "originalWidth": candidate["originalWidth"],
-                "originalHeight": candidate["originalHeight"],
-            }
-            records.append(record)
-            print(f"{next_day:03d}/{COUNT}: {candidate['title']}")
-            next_day += 1
+        fetched = list(pool.map(fetch_preview, candidates[: COUNT + 80]))
+
+    for candidate, preview, digest in fetched:
+        if digest in seen_previews:
+            continue
+        seen_previews.add(digest)
+        day = len(records) + 1
+        filename = f"day_{day:03d}.webp"
+        (OUT / filename).write_bytes(preview)
+        records.append({
+            "day": day,
+            "file": filename,
+            "source": "Unsplash",
+            "sourceId": candidate["sourceId"],
+            "title": candidate["title"],
+            "creator": candidate["creator"],
+            "creatorUrl": candidate["creatorUrl"],
+            "license": candidate["license"],
+            "licenseUrl": candidate["licenseUrl"],
+            "sourceUrl": candidate["sourceUrl"],
+            "originalUrl": candidate["originalUrl"],
+            "download4kUrl": candidate["download4kUrl"],
+            "originalWidth": candidate["originalWidth"],
+            "originalHeight": candidate["originalHeight"],
+            "searchTheme": candidate["searchTheme"],
+            "previewSha256": digest,
+        })
+        print(f"{day:03d}/{COUNT}: {candidate['creator']} — {candidate['searchTheme']}")
+        if day == COUNT:
+            break
 
     if len(records) != COUNT:
-        raise RuntimeError(f"Generated {len(records)} unique wallpapers; expected {COUNT}")
+        raise RuntimeError(f"Collected {len(records)} unique wallpapers; expected {COUNT}")
 
     manifest = {
-        "generatedFrom": "Wikimedia Commons",
-        "policy": "365 existing internet images; every original is distinct, 4K-qualified, and public domain or Creative Commons. No artwork is AI-generated.",
-        "width": SIZE[0],
-        "height": SIZE[1],
-        "count": len(records),
+        "source": "Unsplash",
+        "licenseUrl": LICENSE_URL,
+        "policy": "365 existing internet photographs. Every source ID and preview is distinct, every original is 4K-qualified, and no artwork is AI-generated.",
+        "previewWidth": PREVIEW_SIZE[0],
+        "previewHeight": PREVIEW_SIZE[1],
+        "downloadWidth": 2160,
+        "downloadHeight": 3840,
+        "count": COUNT,
         "wallpapers": records,
     }
-    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
-    assert len({item["sourceUrl"] for item in records}) == COUNT
-    assert len({item["sourceSha1"] for item in records}) == COUNT
-    assert all(max(item["originalWidth"], item["originalHeight"]) >= 3840 and min(item["originalWidth"], item["originalHeight"]) >= 2160 for item in records)
-    print(f"Built and attributed {COUNT} distinct wallpapers in {OUT}")
+    (OUT / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+    )
+    assert len({item["sourceId"] for item in records}) == COUNT
+    assert len({item["previewSha256"] for item in records}) == COUNT
+    assert all(
+        max(item["originalWidth"], item["originalHeight"]) >= 3840
+        and min(item["originalWidth"], item["originalHeight"]) >= 2160
+        for item in records
+    )
+    print(f"Collected {COUNT} distinct licensed 4K sources; no synthetic images.")
 
 
 if __name__ == "__main__":
