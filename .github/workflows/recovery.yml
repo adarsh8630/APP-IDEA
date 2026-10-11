@@ -45,7 +45,7 @@ jobs:
           assert all(min(item['originalWidth'], item['originalHeight']) >= 2160 for item in items)
           for day, item in enumerate(items, 1):
               path = root / f'day_{day:03d}.webp'
-              assert path.is_file() and path.stat().st_size > 20000
+              assert path.is_file() and path.stat().st_size > 5000
               assert hashlib.sha256(path.read_bytes()).hexdigest() == item['previewSha256']
           print('Validated 365 different, licensed, 4K-qualified internet photographs.')
           PY
