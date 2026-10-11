@@ -93,7 +93,7 @@ def search_candidates() -> list[dict[str, Any]]:
                 "gsroffset": str(offset),
                 "prop": "imageinfo",
                 "iiprop": "url|mime|size|sha1|extmetadata",
-                "iiurlwidth": "1280",
+                "iiurlwidth": "960",
             }
             response = session.get(API, params=params, timeout=60)
             response.raise_for_status()
@@ -152,7 +152,15 @@ def search_candidates() -> list[dict[str, Any]]:
 
 def fetch_preview(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str] | None:
     try:
-        response = session.get(candidate["previewUrl"], timeout=25)
+        response = None
+        for attempt in range(6):
+            response = session.get(candidate["previewUrl"], timeout=35)
+            if response.status_code != 429:
+                break
+            retry_after = response.headers.get("Retry-After")
+            delay = float(retry_after) if retry_after and retry_after.isdigit() else 2.0 + attempt * 2.0
+            time.sleep(delay)
+        assert response is not None
         response.raise_for_status()
         payload = response.content
         if len(payload) < 5000:
@@ -178,7 +186,7 @@ def main() -> None:
     records: list[dict[str, Any]] = []
     seen_previews: set[str] = set()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         for result in pool.map(fetch_preview, candidates[:450]):
             if result is None:
                 continue
