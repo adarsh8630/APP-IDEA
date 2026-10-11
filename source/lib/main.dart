@@ -74,24 +74,62 @@ class MonthInfo {
   final String accent;
 }
 
+class WallpaperCredit {
+  const WallpaperCredit({
+    required this.day,
+    required this.title,
+    required this.creator,
+    required this.license,
+    required this.licenseUrl,
+    required this.sourceUrl,
+  });
+
+  factory WallpaperCredit.fromJson(Map<String, dynamic> json) => WallpaperCredit(
+        day: (json['day'] as num).toInt(),
+        title: json['title'] as String? ?? '',
+        creator: json['creator'] as String? ?? 'Wikimedia Commons contributor',
+        license: json['license'] as String? ?? '',
+        licenseUrl: json['licenseUrl'] as String? ?? '',
+        sourceUrl: json['sourceUrl'] as String? ?? '',
+      );
+
+  final int day;
+  final String title;
+  final String creator;
+  final String license;
+  final String licenseUrl;
+  final String sourceUrl;
+}
+
 class ScriptureRepository {
-  const ScriptureRepository(this.entries, this.months, this.translation);
+  const ScriptureRepository(this.entries, this.months, this.translation, [this.wallpaperCredits = const []]);
 
   static Future<ScriptureRepository> load() async {
     final raw = await rootBundle.loadString('assets/content/year_365.json');
     final json = jsonDecode(raw) as Map<String, dynamic>;
+    final creditsRaw = await rootBundle.loadString('assets/wallpapers/manifest.json');
+    final creditsJson = jsonDecode(creditsRaw) as Map<String, dynamic>;
+    final credits = (creditsJson['wallpapers'] as List<dynamic>)
+        .map((item) => WallpaperCredit.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
     final entries = (json['entries'] as List<dynamic>)
         .map((item) => ScriptureEntry.fromJson(item as Map<String, dynamic>))
         .toList(growable: false);
     final months = (json['months'] as List<dynamic>)
         .map((item) => MonthInfo.fromJson(item as Map<String, dynamic>))
         .toList(growable: false);
-    return ScriptureRepository(entries, months, json['translation'] as String? ?? 'World English Bible (WEB)');
+    return ScriptureRepository(entries, months, json['translation'] as String? ?? 'World English Bible (WEB)', credits);
   }
 
   final List<ScriptureEntry> entries;
   final List<MonthInfo> months;
   final String translation;
+  final List<WallpaperCredit> wallpaperCredits;
+
+  WallpaperCredit? creditFor(ScriptureEntry entry) =>
+      entry.dayOfYear > 0 && entry.dayOfYear <= wallpaperCredits.length
+          ? wallpaperCredits[entry.dayOfYear - 1]
+          : null;
 
   int indexForDate(DateTime date) {
     final elapsed = date.difference(DateTime(date.year, 1, 1)).inDays;
@@ -178,6 +216,20 @@ class Scripture365App extends StatelessWidget {
         theme: appTheme(Brightness.light),
         darkTheme: appTheme(Brightness.dark),
         home: state.onboardingComplete ? AppShell(state) : OnboardingScreen(state),
+        builder: (context, child) => ColoredBox(
+          color: const Color(0xff10110f),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(boxShadow: [
+                  BoxShadow(color: Color(0x66000000), blurRadius: 36),
+                ]),
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -209,7 +261,7 @@ class OnboardingScreen extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset('assets/wallpapers/sunrise.webp', fit: BoxFit.cover),
+          Image.asset('assets/wallpapers/day_001.webp', fit: BoxFit.cover),
           const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x22000000), Color(0xdd11130e)]))),
           SafeArea(
             child: Padding(
@@ -332,7 +384,7 @@ class _TodayScreenState extends State<TodayScreen> {
                       icon: const Icon(Icons.copy_outlined),
                       label: const Text('Copy Scripture'),
                     ),
-                    FilledButton.tonalIcon(onPressed: () => showWallpaperSheet(context, entry), icon: const Icon(Icons.wallpaper), label: const Text('Create Wallpaper')),
+                    FilledButton.tonalIcon(onPressed: () => showWallpaperSheet(context, entry, widget.state.repository.creditFor(entry)), icon: const Icon(Icons.wallpaper), label: const Text('Create Wallpaper')),
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -361,7 +413,7 @@ class ScriptureCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.asset(wallpaperFor(entry.visual), fit: BoxFit.cover),
+            Image.asset(wallpaperFor(entry), fit: BoxFit.cover),
             const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [.15, .55, 1], colors: [Color(0x22000000), Color(0x55000000), Color(0xdd090b08)]))),
             Padding(
               padding: const EdgeInsets.all(26),
@@ -509,7 +561,7 @@ class EntryTile extends StatelessWidget {
           ),
         ),
         child: Row(children: [
-          SizedBox(width: 92, height: 110, child: Image.asset(wallpaperFor(entry.visual), fit: BoxFit.cover)),
+          SizedBox(width: 92, height: 110, child: Image.asset(wallpaperFor(entry), fit: BoxFit.cover)),
           Expanded(child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -661,7 +713,7 @@ class SettingsGroup extends StatelessWidget {
   }
 }
 
-Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry) {
+Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry, WallpaperCredit? credit) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -676,7 +728,7 @@ Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry) {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: Stack(fit: StackFit.expand, children: [
-              Image.asset(wallpaperFor(entry.visual), fit: BoxFit.cover),
+              Image.asset(wallpaperFor(entry), fit: BoxFit.cover),
               const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x11000000), Color(0xcc000000)]))),
               Padding(
                 padding: const EdgeInsets.all(26),
@@ -691,13 +743,25 @@ Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry) {
         ),
         const SizedBox(height: 14),
         FilledButton.icon(onPressed: () => Share.share(entry.shareText), icon: const Icon(Icons.ios_share), label: const Text('Share Scripture')),
+        if (credit != null) ...[
+          const SizedBox(height: 12),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Artwork credit'),
+            subtitle: Text(credit.license),
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(credit.title),
+                subtitle: SelectableText(credit.creator + '\n' + credit.sourceUrl + (credit.licenseUrl.isEmpty ? '' : '\n' + credit.licenseUrl)),
+              ),
+            ],
+          ),
+        ],
       ]),
     ),
   );
 }
 
-String wallpaperFor(String visual) {
-  const supported = {'forest', 'harvest', 'meadow', 'mist', 'mountain', 'night', 'path', 'still', 'sunrise', 'sunset', 'trail', 'valley'};
-  final name = supported.contains(visual) ? visual : visual == 'sacred' ? 'night' : visual == 'sky' ? 'valley' : 'sunrise';
-  return 'assets/wallpapers/' + name + '.webp';
-}
+String wallpaperFor(ScriptureEntry entry) =>
+    'assets/wallpapers/day_' + entry.dayOfYear.toString().padLeft(3, '0') + '.webp';
