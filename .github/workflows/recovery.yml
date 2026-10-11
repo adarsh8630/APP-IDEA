@@ -1,23 +1,54 @@
-name: Scripture 365 recovery
+name: Scripture 365 production
 
 on:
   push:
-    branches: [recovery-production]
+    branches: [preview]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: scripture365-recovery
+  group: scripture365-production
   cancel-in-progress: true
 
 jobs:
-  verify-and-build:
+  verify-build-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install wallpaper tooling
+        run: python3 -m pip install --disable-pip-version-check requests pillow
+
+      - name: Collect 365 existing licensed 4K Christian photographs
+        working-directory: source
+        run: python3 tool/build_wallpapers.py
+
+      - name: Validate wallpaper integrity and licensing
+        working-directory: source
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('assets/wallpapers')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          items = manifest['wallpapers']
+          assert manifest['count'] == 365
+          assert len(items) == 365
+          assert [item['day'] for item in items] == list(range(1, 366))
+          assert len({item['sourceId'] for item in items}) == 365
+          assert len({item['previewSha256'] for item in items}) == 365
+          assert all(item['license'] and item['licenseUrl'] and item['sourceUrl'] for item in items)
+          assert all(item['download4kUrl'].startswith('https://') for item in items)
+          assert all(max(item['originalWidth'], item['originalHeight']) >= 3840 for item in items)
+          assert all(min(item['originalWidth'], item['originalHeight']) >= 2160 for item in items)
+          for day, item in enumerate(items, 1):
+              path = root / f'day_{day:03d}.webp'
+              assert path.is_file() and path.stat().st_size > 20000
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['previewSha256']
+          print('Validated 365 different, licensed, 4K-qualified internet photographs.')
+          PY
 
       - uses: subosito/flutter-action@v2
         with:
@@ -32,17 +63,15 @@ jobs:
         working-directory: source
         run: flutter pub get
 
-      - name: Validate 365-day content
+      - name: Validate 365-day Scripture content
         working-directory: source
         run: |
           python3 - <<'PY'
           import json, pathlib
           data = json.loads(pathlib.Path('assets/content/year_365.json').read_text())
           entries = data['entries']
-          assert len(entries) == 365, f'expected 365 entries, got {len(entries)}'
+          assert len(entries) == 365
           assert [entry['doy'] for entry in entries] == list(range(1, 366))
-          for name in ['forest','harvest','meadow','mist','mountain','night','path','still','sunrise','sunset','trail','valley']:
-              assert pathlib.Path(f'assets/wallpapers/{name}.webp').is_file()
           PY
 
       - name: Analyze
@@ -57,24 +86,25 @@ jobs:
         working-directory: source
         run: flutter build web --release --base-href /APP-IDEA/
 
-      - name: Build Android release
+      - name: Build Android release APK
         working-directory: source
         run: flutter build apk --release
 
-      - name: Preserve release artifacts
+      - name: Preserve web and Android releases
         uses: actions/upload-artifact@v4
         with:
           name: scripture365-${{ github.sha }}
           path: |
             source/build/web
             source/build/app/outputs/flutter-apk/app-release.apk
+            source/assets/wallpapers/manifest.json
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish verified build
+      - name: Publish live mobile-first app
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: production-web
+          publish_branch: gh-pages
           publish_dir: source/build/web
-          force_orphan: true
+          keep_files: true
