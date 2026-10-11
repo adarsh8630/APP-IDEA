@@ -152,7 +152,7 @@ def search_candidates() -> list[dict[str, Any]]:
 
 def fetch_preview(candidate: dict[str, Any]) -> tuple[dict[str, Any], bytes, str] | None:
     try:
-        response = session.get(candidate["previewUrl"], timeout=90)
+        response = session.get(candidate["previewUrl"], timeout=25)
         response.raise_for_status()
         payload = response.content
         if len(payload) < 5000:
@@ -178,8 +178,8 @@ def main() -> None:
     records: list[dict[str, Any]] = []
     seen_previews: set[str] = set()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        for result in pool.map(fetch_preview, candidates):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+        for result in pool.map(fetch_preview, candidates[:450]):
             if result is None:
                 continue
             candidate, preview, digest = result
