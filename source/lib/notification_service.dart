@@ -19,7 +19,7 @@ class NotificationService {
     tz_data.initializeTimeZones();
     try {
       final local = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(local.identifier));
+      tz.setLocalLocation(tz.getLocation(local));
     } catch (_) {
       // tz.local remains a safe fallback; scheduling is still functional.
     }
