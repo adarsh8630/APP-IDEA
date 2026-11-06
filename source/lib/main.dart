@@ -7,11 +7,15 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'monetization.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final repository = await ScriptureRepository.load();
   final preferences = await SharedPreferences.getInstance();
-  runApp(Scripture365App(AppState(repository, preferences)));
+  final monetization = MonetizationController();
+  await monetization.initialize();
+  runApp(Scripture365App(AppState(repository, preferences, monetization)));
 }
 
 class ScriptureEntry {
@@ -142,22 +146,40 @@ class ScriptureRepository {
 }
 
 class AppState extends ChangeNotifier {
-  AppState(this.repository, this.preferences)
+  AppState(this.repository, this.preferences, this.monetization)
       : _themeMode = preferences.getString('theme_mode') ?? 'system',
         onboardingComplete = preferences.getBool('onboarding_complete') ?? false,
         reminderEnabled = preferences.getBool('daily_reminders_enabled') ?? false,
         reminderMinutes = preferences.getInt('daily_reminder_minutes') ?? 480,
         saved = (preferences.getStringList('saved_days') ?? const <String>[]).map(int.parse).toSet(),
-        history = (preferences.getStringList('history_days') ?? const <String>[]).map(int.parse).toList();
+        history = (preferences.getStringList('history_days') ?? const <String>[]).map(int.parse).toList(),
+        gracePoints = preferences.getInt('grace_points') ?? 0,
+        readingStreak = preferences.getInt('reading_streak') ?? 0,
+        _lastReadingRewardDate = preferences.getString('last_reading_reward_date'),
+        _lastShareRewardDate = preferences.getString('last_share_reward_date'),
+        _lastSaveRewardDate = preferences.getString('last_save_reward_date') {
+    monetization.addListener(notifyListeners);
+  }
 
   final ScriptureRepository repository;
   final SharedPreferences preferences;
+  final MonetizationController monetization;
   String _themeMode;
   bool onboardingComplete;
   bool reminderEnabled;
   int reminderMinutes;
   final Set<int> saved;
   final List<int> history;
+  int gracePoints;
+  int readingStreak;
+  String? _lastReadingRewardDate;
+  String? _lastShareRewardDate;
+  String? _lastSaveRewardDate;
+
+  String _dateKey(DateTime date) =>
+      date.year.toString().padLeft(4, '0') + '-' +
+      date.month.toString().padLeft(2, '0') + '-' +
+      date.day.toString().padLeft(2, '0');
 
   ThemeMode get themeMode => _themeMode == 'light'
       ? ThemeMode.light
@@ -179,8 +201,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleSaved(ScriptureEntry entry) async {
-    if (!saved.add(entry.dayOfYear)) saved.remove(entry.dayOfYear);
+    final added = saved.add(entry.dayOfYear);
+    if (!added) saved.remove(entry.dayOfYear);
     await preferences.setStringList('saved_days', saved.map((value) => value.toString()).toList());
+    if (added) await _awardSave();
     notifyListeners();
   }
 
@@ -189,7 +213,60 @@ class AppState extends ChangeNotifier {
     history.insert(0, entry.dayOfYear);
     if (history.length > 60) history.removeRange(60, history.length);
     await preferences.setStringList('history_days', history.map((value) => value.toString()).toList());
+    await _awardDailyReading();
     notifyListeners();
+  }
+
+  Future<void> _awardDailyReading() async {
+    final now = DateTime.now();
+    final today = _dateKey(now);
+    if (_lastReadingRewardDate == today) return;
+    final previous = _lastReadingRewardDate == null
+        ? null
+        : DateTime.tryParse(_lastReadingRewardDate!);
+    readingStreak = previous != null &&
+            DateTime(now.year, now.month, now.day)
+                    .difference(DateTime(previous.year, previous.month, previous.day))
+                    .inDays ==
+                1
+        ? readingStreak + 1
+        : 1;
+    gracePoints += 10 + (readingStreak % 7 == 0 ? 25 : 0);
+    _lastReadingRewardDate = today;
+    await Future.wait([
+      preferences.setInt('grace_points', gracePoints),
+      preferences.setInt('reading_streak', readingStreak),
+      preferences.setString('last_reading_reward_date', today),
+    ]);
+  }
+
+  Future<void> recordShare() async {
+    final today = _dateKey(DateTime.now());
+    if (_lastShareRewardDate == today) return;
+    gracePoints += 3;
+    _lastShareRewardDate = today;
+    await Future.wait([
+      preferences.setInt('grace_points', gracePoints),
+      preferences.setString('last_share_reward_date', today),
+    ]);
+    notifyListeners();
+  }
+
+  Future<void> _awardSave() async {
+    final today = _dateKey(DateTime.now());
+    if (_lastSaveRewardDate == today) return;
+    gracePoints += 2;
+    _lastSaveRewardDate = today;
+    await Future.wait([
+      preferences.setInt('grace_points', gracePoints),
+      preferences.setString('last_save_reward_date', today),
+    ]);
+  }
+
+  @override
+  void dispose() {
+    monetization.removeListener(notifyListeners);
+    super.dispose();
   }
 
   Future<void> setReminderEnabled(bool value) async {
@@ -379,7 +456,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    OutlinedButton.icon(onPressed: () => Share.share(entry.shareText), icon: const Icon(Icons.ios_share), label: const Text('Share')),
+                    OutlinedButton.icon(onPressed: () async { await Share.share(entry.shareText); await widget.state.recordShare(); }, icon: const Icon(Icons.ios_share), label: const Text('Share')),
                     OutlinedButton.icon(
                       onPressed: () async {
                         await Clipboard.setData(ClipboardData(text: entry.shareText));
@@ -388,7 +465,7 @@ class _TodayScreenState extends State<TodayScreen> {
                       icon: const Icon(Icons.copy_outlined),
                       label: const Text('Copy Scripture'),
                     ),
-                    FilledButton.tonalIcon(onPressed: () => showWallpaperSheet(context, entry, widget.state.repository.creditFor(entry)), icon: const Icon(Icons.wallpaper), label: const Text('Create Wallpaper')),
+                    FilledButton.tonalIcon(onPressed: () => showWallpaperSheet(context, entry, widget.state.repository.creditFor(entry), widget.state), icon: const Icon(Icons.wallpaper), label: const Text('Create Wallpaper')),
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -668,6 +745,27 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
           ]),
+          SettingsGroup(title: 'Premium', children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(state.monetization.isPremium ? Icons.workspace_premium : Icons.diamond_outlined),
+              title: Text(state.monetization.isPremium ? 'Premium is active' : 'Scripture 365 Premium'),
+              subtitle: Text(state.monetization.isPremium
+                  ? '4K originals and every premium feature are unlocked.'
+                  : 'Unlock 4K originals while Scripture and daily reading stay free.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showPremiumSheet(context, state),
+            ),
+          ]),
+          SettingsGroup(title: 'Grace points', children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.stars_rounded),
+              title: Text(state.gracePoints.toString() + ' points'),
+              subtitle: Text(state.readingStreak.toString() + '-day reading streak'),
+            ),
+            const Text('Earn 10 points for the first reading each day, 3 for the first share, and 2 for the first save. Every seventh reading day adds 25 bonus points. Points are non-cash, non-transferable devotional rewards.'),
+          ]),
           SettingsGroup(title: 'Widgets', children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -717,7 +815,86 @@ class SettingsGroup extends StatelessWidget {
   }
 }
 
-Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry, WallpaperCredit? credit) {
+Future<void> showPremiumSheet(BuildContext context, AppState state) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: ListenableBuilder(
+        listenable: state.monetization,
+        builder: (context, _) {
+          final store = state.monetization;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 0, 22, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(store.isPremium ? Icons.workspace_premium : Icons.diamond_outlined, size: 42),
+                const SizedBox(height: 12),
+                Text(
+                  store.isPremium ? 'Premium is active' : 'Scripture 365 Premium',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Scripture, reflections, prayer, saving and daily rewards always remain free. Premium unlocks every original 4K artwork and future premium appearance options.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 18),
+                if (store.status == StoreStatus.loading || store.status == StoreStatus.purchasing)
+                  const Center(child: CircularProgressIndicator())
+                else if (!store.isPremium)
+                  ...store.products.map(
+                    (product) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: FilledButton(
+                        onPressed: store.canPurchase
+                            ? () async {
+                                final purchased = await store.purchase(product);
+                                if (purchased && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Premium unlocked. Thank you for supporting Scripture 365.')),
+                                  );
+                                }
+                              }
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          child: Row(
+                            children: [
+                              Expanded(child: Text(product.periodLabel)),
+                              Text(product.price),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (store.message != null) ...[
+                  const SizedBox(height: 10),
+                  Text(store.message!, textAlign: TextAlign.center),
+                ],
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: store.status == StoreStatus.purchasing ? null : store.restore,
+                  child: const Text('Restore purchases'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Not now'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry, WallpaperCredit? credit, AppState state) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -753,8 +930,15 @@ Future<void> showWallpaperSheet(BuildContext context, ScriptureEntry entry, Wall
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () async {
+                if (!state.monetization.isPremium) {
+                  await showPremiumSheet(context, state);
+                  return;
+                }
                 final uri = Uri.tryParse(credit.download4kUrl);
-                if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                if (uri != null) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  await state.recordShare();
+                }
               },
               icon: const Icon(Icons.download_rounded),
               label: const Text('Open 4K Wallpaper'),
