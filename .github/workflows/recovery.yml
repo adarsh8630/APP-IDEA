@@ -57,7 +57,7 @@ jobs:
 
       - name: Generate platform scaffolding
         working-directory: source
-        run: flutter create --platforms=web,android,ios --project-name scripture365 .
+        run: flutter create --platforms=web,android,ios --org com.adarsh8630 --project-name scripture365 .
 
       - name: Configure Android scheduled notifications
         working-directory: source
