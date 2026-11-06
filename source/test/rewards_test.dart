@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scripture365/main.dart';
 import 'package:scripture365/monetization.dart';
+import 'package:scripture365/notification_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +28,7 @@ void main() {
       ScriptureRepository([entry], const [], 'WEB'),
       preferences,
       MonetizationController(),
+      NotificationService(),
     );
 
     await state.recordView(entry);
