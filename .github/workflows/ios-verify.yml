@@ -26,7 +26,7 @@ jobs:
 
       - name: Generate iOS project
         working-directory: source
-        run: flutter create --platforms=ios --project-name scripture365 .
+        run: flutter create --platforms=ios --org com.adarsh8630 --project-name scripture365 .
 
       - name: Prepare verified-shape wallpaper assets for compilation
         working-directory: source
