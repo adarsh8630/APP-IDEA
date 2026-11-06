@@ -62,7 +62,7 @@ jobs:
           from pathlib import Path
           from PIL import Image
 
-          source = Image.open('../icons/Icon-512.png').convert('RGBA')
+          source = Image.open('../icons/Icon-512.png').convert('RGB')
           app_icons = Path('ios/Runner/Assets.xcassets/AppIcon.appiconset')
           contents = json.loads((app_icons / 'Contents.json').read_text())
           for item in contents.get('images', []):
