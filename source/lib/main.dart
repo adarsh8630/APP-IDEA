@@ -9,14 +9,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'monetization.dart';
+import 'notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final repository = await ScriptureRepository.load();
   final preferences = await SharedPreferences.getInstance();
   final monetization = MonetizationController();
-  await monetization.initialize();
-  runApp(Scripture365App(AppState(repository, preferences, monetization)));
+  final notifications = NotificationService();
+  await Future.wait([monetization.initialize(), notifications.initialize()]);
+  runApp(Scripture365App(AppState(repository, preferences, monetization, notifications)));
 }
 
 class ScriptureEntry {
@@ -147,7 +149,7 @@ class ScriptureRepository {
 }
 
 class AppState extends ChangeNotifier {
-  AppState(this.repository, this.preferences, this.monetization)
+  AppState(this.repository, this.preferences, this.monetization, this.notifications)
       : _themeMode = preferences.getString('theme_mode') ?? 'system',
         onboardingComplete = preferences.getBool('onboarding_complete') ?? false,
         reminderEnabled = preferences.getBool('daily_reminders_enabled') ?? false,
@@ -165,6 +167,7 @@ class AppState extends ChangeNotifier {
   final ScriptureRepository repository;
   final SharedPreferences preferences;
   final MonetizationController monetization;
+  final NotificationService notifications;
   String _themeMode;
   bool onboardingComplete;
   bool reminderEnabled;
@@ -270,15 +273,34 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> setReminderEnabled(bool value) async {
+  Future<bool> setReminderEnabled(bool value) async {
+    if (value) {
+      final granted = await notifications.requestPermission();
+      if (!granted) {
+        reminderEnabled = false;
+        await preferences.setBool('daily_reminders_enabled', false);
+        notifyListeners();
+        return false;
+      }
+      await notifications.scheduleDaily(
+        hour: reminderMinutes ~/ 60,
+        minute: reminderMinutes % 60,
+      );
+    } else {
+      await notifications.cancelDaily();
+    }
     reminderEnabled = value;
     await preferences.setBool('daily_reminders_enabled', value);
     notifyListeners();
+    return true;
   }
 
   Future<void> setReminderTime(TimeOfDay time) async {
     reminderMinutes = time.hour * 60 + time.minute;
     await preferences.setInt('daily_reminder_minutes', reminderMinutes);
+    if (reminderEnabled) {
+      await notifications.scheduleDaily(hour: time.hour, minute: time.minute);
+    }
     notifyListeners();
   }
 }
@@ -732,7 +754,14 @@ class SettingsScreen extends StatelessWidget {
               title: const Text('Daily Scripture reminder'),
               subtitle: Text('New Scripture available at ' + time.format(context)),
               value: state.reminderEnabled,
-              onChanged: state.setReminderEnabled,
+              onChanged: (value) async {
+                final enabled = await state.setReminderEnabled(value);
+                if (value && !enabled && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Notification permission is required for daily reminders.')),
+                  );
+                }
+              },
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -766,23 +795,6 @@ class SettingsScreen extends StatelessWidget {
               subtitle: Text(state.readingStreak.toString() + '-day reading streak'),
             ),
             const Text('Earn 10 points for the first reading each day, 3 for the first share, and 2 for the first save. Every seventh reading day adds 25 bonus points. Points are non-cash, non-transferable devotional rewards.'),
-          ]),
-          SettingsGroup(title: 'Widgets', children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.widgets_outlined),
-              title: const Text('Add Home Screen Widget'),
-              subtitle: const Text('Keep Scripture where you see it most.'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('How to Add a Widget'),
-                  content: const Text('Open your launcher widget picker and choose Scripture 365. Widget data refreshes with the daily entry in signed Android and iOS builds.'),
-                  actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
-                ),
-              ),
-            ),
           ]),
           SettingsGroup(title: 'About', children: [
             const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.auto_awesome), title: Text('Scripture 365'), subtitle: Text('Version 1.0.0 • 365-day journey')),
