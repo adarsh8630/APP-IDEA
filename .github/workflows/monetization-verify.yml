@@ -1,0 +1,87 @@
+name: Monetization cross-platform verification
+
+on:
+  push:
+    branches: [monetization-production]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platforms and compile fixtures
+        working-directory: source
+        run: |
+          flutter create --platforms=web,android --project-name scripture365 .
+          python3 - <<'PY'
+          import json, pathlib, shutil
+          root = pathlib.Path('assets/wallpapers')
+          source = root / 'sunrise.webp'
+          credits = []
+          for day in range(1, 366):
+              shutil.copyfile(source, root / f'day_{day:03d}.webp')
+              credits.append({
+                  'day': day, 'title': 'CI fixture', 'creator': 'CI',
+                  'license': 'CI fixture', 'licenseUrl': '',
+                  'sourceUrl': 'https://github.com/adarsh8630/APP-IDEA',
+                  'download4kUrl': 'https://github.com/adarsh8630/APP-IDEA',
+              })
+          (root / 'manifest.json').write_text(json.dumps({'count': 365, 'wallpapers': credits}))
+          PY
+      - working-directory: source
+        run: flutter pub get
+      - working-directory: source
+        run: flutter analyze
+      - working-directory: source
+        run: flutter test
+      - working-directory: source
+        run: flutter build web --release --base-href /APP-IDEA/
+      - working-directory: source
+        run: flutter build apk --release --dart-define=RC_ANDROID_API_KEY=test_android_key
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS platform and compile fixtures
+        working-directory: source
+        run: |
+          flutter create --platforms=ios --project-name scripture365 .
+          python3 - <<'PY'
+          import json, pathlib, shutil
+          root = pathlib.Path('assets/wallpapers')
+          source = root / 'sunrise.webp'
+          credits = []
+          for day in range(1, 366):
+              shutil.copyfile(source, root / f'day_{day:03d}.webp')
+              credits.append({
+                  'day': day, 'title': 'CI fixture', 'creator': 'CI',
+                  'license': 'CI fixture', 'licenseUrl': '',
+                  'sourceUrl': 'https://github.com/adarsh8630/APP-IDEA',
+                  'download4kUrl': 'https://github.com/adarsh8630/APP-IDEA',
+              })
+          (root / 'manifest.json').write_text(json.dumps({'count': 365, 'wallpapers': credits}))
+          PY
+      - working-directory: source
+        run: flutter pub get
+      - working-directory: source
+        run: flutter analyze
+      - working-directory: source
+        run: flutter test
+      - name: Compile release for iPhone and iPad
+        working-directory: source
+        run: flutter build ios --release --no-codesign --dart-define=RC_IOS_API_KEY=test_ios_key
