@@ -157,11 +157,11 @@ jobs:
               1,
           )
           if 'coreLibraryDesugaring(' not in gradle_text:
-              gradle_text += '''
-dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-}
-'''
+              gradle_text += (
+                  '\n\ndependencies {\n'
+                  '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n'
+                  '}\n'
+              )
           gradle.write_text(gradle_text)
           PY
 
