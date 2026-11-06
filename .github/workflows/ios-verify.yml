@@ -65,7 +65,7 @@ jobs:
 
       - name: Compile release app for iPhone and iPad
         working-directory: source
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=RC_IOS_API_KEY=${{ secrets.RC_IOS_API_KEY }}
 
       - name: Preserve unsigned iOS build
         uses: actions/upload-artifact@v4
