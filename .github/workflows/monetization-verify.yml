@@ -67,6 +67,21 @@ jobs:
           '''
           text = text.replace('    </application>', receivers + '    </application>')
           path.write_text(text)
+
+          gradle = Path('android/app/build.gradle.kts')
+          gradle_text = gradle.read_text()
+          gradle_text = gradle_text.replace(
+              '    compileOptions {\n',
+              '    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n',
+              1,
+          )
+          if 'coreLibraryDesugaring(' not in gradle_text:
+              gradle_text += '''
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+'''
+          gradle.write_text(gradle_text)
           PY
       - working-directory: source
         run: flutter pub get
