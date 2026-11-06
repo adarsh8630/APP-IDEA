@@ -87,6 +87,65 @@ jobs:
           path.write_text(text)
           PY
 
+      - name: Configure Android release signing when credentials are available
+        working-directory: source
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+
+          encoded = os.environ.get('ANDROID_KEYSTORE_BASE64', '')
+          if not encoded:
+              print('Android signing secrets are absent; CI compatibility artifact will use the generated development signing configuration.')
+              raise SystemExit(0)
+
+          app = Path('android/app')
+          (app / 'upload-keystore.jks').write_bytes(base64.b64decode(encoded))
+          properties = Path('android/key.properties')
+          properties.write_text(
+              'storePassword=' + os.environ['ANDROID_KEYSTORE_PASSWORD'] + '\n'
+              'keyPassword=' + os.environ['ANDROID_KEY_PASSWORD'] + '\n'
+              'keyAlias=' + os.environ['ANDROID_KEY_ALIAS'] + '\n'
+              'storeFile=upload-keystore.jks\n'
+          )
+
+          gradle = app / 'build.gradle.kts'
+          text = gradle.read_text()
+          prefix = '''import java.io.FileInputStream
+          import java.util.Properties
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+          signing = '''    signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+
+          '''
+          text = prefix + text
+          text = text.replace('    buildTypes {', signing + '    buildTypes {')
+          text = text.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")'
+          )
+          gradle.write_text(text)
+          print('Configured production Android upload signing.')
+          PY
+
       - name: Resolve dependencies
         working-directory: source
         run: flutter pub get
