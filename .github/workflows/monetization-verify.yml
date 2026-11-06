@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: monetization-verification-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-web:
     runs-on: ubuntu-latest
