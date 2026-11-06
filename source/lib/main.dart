@@ -18,7 +18,14 @@ Future<void> main() async {
   final monetization = MonetizationController();
   final notifications = NotificationService();
   await Future.wait([monetization.initialize(), notifications.initialize()]);
-  runApp(Scripture365App(AppState(repository, preferences, monetization, notifications)));
+  final state = AppState(repository, preferences, monetization, notifications);
+  if (state.reminderEnabled) {
+    await notifications.scheduleDaily(
+      hour: state.reminderMinutes ~/ 60,
+      minute: state.reminderMinutes % 60,
+    );
+  }
+  runApp(Scripture365App(state));
 }
 
 class ScriptureEntry {
