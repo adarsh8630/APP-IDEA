@@ -24,6 +24,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install icon tooling
+        run: python3 -m pip install --disable-pip-version-check pillow
+
       - name: Generate iOS project
         working-directory: source
         run: flutter create --platforms=ios --org com.adarsh8630 --project-name scripture365 .
@@ -49,6 +52,33 @@ jobs:
                   'download4kUrl': 'https://github.com/adarsh8630/APP-IDEA',
               })
           (root / 'manifest.json').write_text(json.dumps({'count': 365, 'wallpapers': credits}))
+          PY
+
+      - name: Apply Scripture 365 iOS branding
+        working-directory: source
+        run: |
+          python3 - <<'PY'
+          import json, plistlib
+          from pathlib import Path
+          from PIL import Image
+
+          source = Image.open('../icons/Icon-512.png').convert('RGBA')
+          app_icons = Path('ios/Runner/Assets.xcassets/AppIcon.appiconset')
+          contents = json.loads((app_icons / 'Contents.json').read_text())
+          for item in contents.get('images', []):
+              filename, size_text, scale_text = item.get('filename'), item.get('size'), item.get('scale')
+              if not filename or not size_text or not scale_text:
+                  continue
+              pixels = round(float(size_text.split('x')[0]) * float(scale_text.rstrip('x')))
+              source.resize((pixels, pixels), Image.Resampling.LANCZOS).save(app_icons / filename)
+
+          plist_path = Path('ios/Runner/Info.plist')
+          with plist_path.open('rb') as handle:
+              plist = plistlib.load(handle)
+          plist['CFBundleDisplayName'] = 'Scripture 365'
+          plist['CFBundleName'] = 'Scripture 365'
+          with plist_path.open('wb') as handle:
+              plistlib.dump(plist, handle)
           PY
 
       - name: Resolve iOS dependencies
