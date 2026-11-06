@@ -47,6 +47,7 @@ class PremiumProduct {
 class MonetizationController extends ChangeNotifier {
   StoreStatus status = StoreStatus.loading;
   bool isPremium = false;
+  bool isConfigured = false;
   String? message;
   List<PremiumProduct> products = const [];
 
@@ -79,6 +80,7 @@ class MonetizationController extends ChangeNotifier {
         await Purchases.setLogLevel(LogLevel.debug);
       }
       await Purchases.configure(PurchasesConfiguration(key));
+      isConfigured = true;
       Purchases.addCustomerInfoUpdateListener(_applyCustomerInfo);
       final customerInfo = await Purchases.getCustomerInfo();
       _applyCustomerInfo(customerInfo);
