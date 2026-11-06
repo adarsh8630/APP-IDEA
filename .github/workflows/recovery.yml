@@ -88,7 +88,11 @@ jobs:
 
       - name: Build Android release APK
         working-directory: source
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=RC_ANDROID_API_KEY=${{ secrets.RC_ANDROID_API_KEY }}
+
+      - name: Build Android Play App Bundle
+        working-directory: source
+        run: flutter build appbundle --release --dart-define=RC_ANDROID_API_KEY=${{ secrets.RC_ANDROID_API_KEY }}
 
       - name: Preserve web and Android releases
         uses: actions/upload-artifact@v4
@@ -97,6 +101,7 @@ jobs:
           path: |
             source/build/web
             source/build/app/outputs/flutter-apk/app-release.apk
+            source/build/app/outputs/bundle/release/app-release.aab
             source/assets/wallpapers/manifest.json
           if-no-files-found: error
           retention-days: 30
