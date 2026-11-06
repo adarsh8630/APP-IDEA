@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -787,6 +788,20 @@ class SettingsScreen extends StatelessWidget {
             const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.auto_awesome), title: Text('Scripture 365'), subtitle: Text('Version 1.0.0 • 365-day journey')),
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.menu_book_outlined), title: const Text('Bible translation'), subtitle: Text(state.repository.translation)),
             const ListTile(contentPadding: EdgeInsets.zero, leading: Icon(Icons.verified_outlined), title: Text('Content integrity'), subtitle: Text('Scripture first, then meaning, visual direction and artwork.')),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('Privacy policy'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () => launchUrl(Uri.parse('https://adarsh8630.github.io/APP-IDEA/privacy.html'), mode: LaunchMode.externalApplication),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Terms and subscriptions'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () => launchUrl(Uri.parse('https://adarsh8630.github.io/APP-IDEA/terms.html'), mode: LaunchMode.externalApplication),
+            ),
           ]),
         ],
       ),
@@ -878,9 +893,19 @@ Future<void> showPremiumSheet(BuildContext context, AppState state) {
                 ],
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: store.status == StoreStatus.purchasing ? null : store.restore,
+                  onPressed: store.status == StoreStatus.purchasing || !store.isConfigured ? null : store.restore,
                   child: const Text('Restore purchases'),
                 ),
+                if (store.isPremium && !kIsWeb)
+                  TextButton(
+                    onPressed: () async {
+                      final uri = defaultTargetPlatform == TargetPlatform.iOS
+                          ? Uri.parse('https://apps.apple.com/account/subscriptions')
+                          : Uri.parse('https://play.google.com/store/account/subscriptions');
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    },
+                    child: const Text('Manage subscription'),
+                  ),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Not now'),
