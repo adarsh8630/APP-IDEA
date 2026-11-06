@@ -25,7 +25,10 @@ jobs:
           cache: true
 
       - name: Install icon tooling
-        run: python3 -m pip install --disable-pip-version-check pillow
+        working-directory: source
+        run: |
+          python3 -m venv .icon-venv
+          .icon-venv/bin/python -m pip install --disable-pip-version-check pillow
 
       - name: Generate iOS project
         working-directory: source
@@ -57,7 +60,7 @@ jobs:
       - name: Apply Scripture 365 iOS branding
         working-directory: source
         run: |
-          python3 - <<'PY'
+          .icon-venv/bin/python - <<'PY'
           import json, plistlib
           from pathlib import Path
           from PIL import Image
