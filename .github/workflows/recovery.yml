@@ -59,6 +59,69 @@ jobs:
         working-directory: source
         run: flutter create --platforms=web,android,ios --org com.adarsh8630 --project-name scripture365 .
 
+      - name: Apply Scripture 365 native and web branding
+        working-directory: source
+        run: |
+          python3 - <<'PY'
+          import json, plistlib
+          from pathlib import Path
+          from PIL import Image
+
+          source = Image.open('../icons/Icon-512.png').convert('RGBA')
+          android_sizes = {
+              'mipmap-mdpi': 48, 'mipmap-hdpi': 72, 'mipmap-xhdpi': 96,
+              'mipmap-xxhdpi': 144, 'mipmap-xxxhdpi': 192,
+          }
+          for folder, size in android_sizes.items():
+              target = Path('android/app/src/main/res') / folder / 'ic_launcher.png'
+              target.parent.mkdir(parents=True, exist_ok=True)
+              source.resize((size, size), Image.Resampling.LANCZOS).save(target)
+
+          web_icons = {
+              'web/favicon.png': 32, 'web/icons/Icon-192.png': 192,
+              'web/icons/Icon-512.png': 512,
+              'web/icons/Icon-maskable-192.png': 192,
+              'web/icons/Icon-maskable-512.png': 512,
+          }
+          for filename, size in web_icons.items():
+              target = Path(filename)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              source.resize((size, size), Image.Resampling.LANCZOS).save(target)
+
+          app_icons = Path('ios/Runner/Assets.xcassets/AppIcon.appiconset')
+          contents_path = app_icons / 'Contents.json'
+          contents = json.loads(contents_path.read_text())
+          for item in contents.get('images', []):
+              filename = item.get('filename')
+              size_text = item.get('size')
+              scale_text = item.get('scale')
+              if not filename or not size_text or not scale_text:
+                  continue
+              points = float(size_text.split('x')[0])
+              scale = float(scale_text.rstrip('x'))
+              pixels = round(points * scale)
+              source.resize((pixels, pixels), Image.Resampling.LANCZOS).save(app_icons / filename)
+
+          plist_path = Path('ios/Runner/Info.plist')
+          with plist_path.open('rb') as handle:
+              plist = plistlib.load(handle)
+          plist['CFBundleDisplayName'] = 'Scripture 365'
+          plist['CFBundleName'] = 'Scripture 365'
+          with plist_path.open('wb') as handle:
+              plistlib.dump(plist, handle)
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          manifest.write_text(manifest.read_text().replace(
+              'android:label="scripture365"', 'android:label="Scripture 365"'
+          ))
+
+          web_manifest = Path('web/manifest.json')
+          web_data = json.loads(web_manifest.read_text())
+          web_data['name'] = 'Scripture 365'
+          web_data['short_name'] = 'Scripture 365'
+          web_manifest.write_text(json.dumps(web_data, indent=2))
+          PY
+
       - name: Configure Android scheduled notifications
         working-directory: source
         run: |
