@@ -13,6 +13,11 @@ Create these products in App Store Connect and Google Play Console:
 | Yearly Premium | Auto-renewing subscription | `scripture365_premium_yearly` |
 | Lifetime Supporter | Non-consumable | `scripture365_premium_lifetime` |
 
+Native application identifiers:
+
+- Android package: `com.adarsh8630.scripture365`
+- iOS bundle ID: `com.adarsh8630.scripture365`
+
 In RevenueCat:
 
 1. Create one project with the Android and iOS apps.
